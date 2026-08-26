@@ -1,62 +1,99 @@
-# ProofStamp via Email
+# ProofStamp via Bitcoin / OpenTimestamps
 
-A privacy-first local web utility that creates SHA-256 hashes for one or more files in the browser and prepares a portable ProofStamp that the user can email, copy, or save.
+Work in progress.
 
-The core create and verify flows do not require a ProofStamp account, proof database, file upload, analytics endpoint, or external API. The user's device reads the file and performs the SHA-256 calculation locally.
+This repository is being prepared for a ProofStamp product that creates portable Bitcoin-backed timestamp evidence using the OpenTimestamps protocol.
 
-## What the app does
+The intended boundary is:
 
-- Hashes 1–5 photos, documents, or other files locally with SHA-256
-- Lets users choose the most useful photos or files from their device rather than taking photos inside ProofStamp
-- Shows local thumbnail previews for selected images so users can confirm or remove the wrong photo before creating the ProofStamp
-- Automatically calculates the SHA-256 hash after files are selected
-- Shows the actual **SHA-256 hash / file fingerprint** in the ready screen and generated ProofStamp
-- Keeps an individual fingerprint for every file
-- Requires one plain-language description for the ProofStamp
-- Prepares an email to the user or another recipient, with optional CC
-- Lets the user copy or save the same portable plain-text ProofStamp
-- Lets the user optionally attach the exact original files in their own email app
-- Verifies one file, several selected files, or all files in a ProofStamp locally
+**ProofStamp evidence format and UX → OpenTimestamps proof → Bitcoin**
 
-## Trust boundary
+ProofStamp should not become a proprietary timestamp authority. The target design keeps source files local, requires no account or wallet for normal use, and preserves standard OpenTimestamps interoperability so a completed proof can be verified outside ProofStamp.
 
-ProofStamp is intentionally not a trusted intermediary.
+## Architecture work first
 
-- Source files stay on the user's device.
-- Files are read only inside the browser for previewing and hashing.
-- Image previews use temporary local browser data. They are not uploaded.
-- Email addresses are used only to construct a local `mailto:` URL.
-- Creating or checking a ProofStamp requires no ProofStamp API call.
-- New ProofStamps do not include a device-generated creation date as evidence.
-- Local `sessionStorage` is used only to preserve the current screen across the email-app handoff.
+The current branch plan deliberately separates architecture review from implementation.
 
-The email provider's received time can provide a practical external record of when the ProofStamp reached that inbox. ProofStamp itself does not claim to provide a trusted timestamp.
+Read these documents before adding OpenTimestamps code:
 
-## Mobile picker behavior
+- [OpenTimestamps v0 implementation plan](docs/opentimestamps-v0-plan.md)
+- [ProofStamp Manifest v1 draft](docs/proofstamp-manifest-v1.md)
+- [OpenTimestamps / Bitcoin threat model](docs/opentimestamps-threat-model.md)
+- [Current inherited client architecture](docs/architecture.md)
 
-On Android and other phones, the system file picker may offer Camera, Video, Recorder, Photos & videos, Files, My Files, Documents, or Browse. ProofStamp does not control the order of those system choices.
+The architecture PR does **not** add Bitcoin stamping yet.
 
-The create screen therefore explains how to reach both the photo gallery and documents. ProofStamp records when the picker opens. If an image, video, or audio file comes back with a `lastModified` time from that picker session, it is treated as a likely fresh Camera/Video/Recorder capture and gets a local **Save original copy** action. Existing gallery media with older timestamps and documents do not get that warning.
+## Current repository baseline
 
-Browsers do not expose the actual picker source, so this is intentionally a heuristic rather than a provenance claim. When the warning appears, its save action receives focus before Description. After the local save starts, focus moves to Description and the normal ProofStamp flow continues.
+The current application code is inherited from **ProofStamp via Email** and provides a useful local-first baseline:
 
-That safety copy is local. It is not uploaded to ProofStamp and is not proof or timestamp evidence by itself.
+- local browser SHA-256 hashing;
+- local file previews;
+- no file upload in the core flow;
+- portable plain-text ProofStamp receipts;
+- local verification;
+- an independent Rust/RustCrypto SHA-256 verifier compiled to WebAssembly;
+- restrictive browser security headers and CSP;
+- Node and Playwright test coverage.
 
-## Photo workflow
+Some code, filenames, copy, and documentation are still email-specific. They should be removed or renamed only after the OpenTimestamps protocol path and manifest format are proven interoperable.
 
-For field use, the intended flow is simple:
+## Target v0 properties
 
-1. Take photos with the phone's normal Camera app when practical.
-2. Review them in the normal Gallery/Photos app.
-3. Choose up to five important or illustrative photos in ProofStamp.
-4. Confirm the selected images from the local thumbnail previews.
-5. Remove or add files as needed, then continue.
+- One source file in the first product flow.
+- File remains on the user's device.
+- SHA-256 calculated locally through two implementation paths before stamping.
+- ProofStamp Manifest v1 binds the file fingerprint and declared context.
+- Manifest commitment is timestamped through standard OpenTimestamps calendars.
+- Pending proof is preserved in the primary portable ProofStamp receipt.
+- Standard `.ots` data remains exportable.
+- Later upgrade adds the Bitcoin attestation.
+- Verification distinguishes file match, OTS validity, Bitcoin anchoring, and confirmation state.
+- No wallet, seed phrase, token, gas payment, ProofStamp account, or ProofStamp proof database is required for the core design.
 
-The system picker can still expose Camera/Video/Recorder. When ProofStamp detects media that looks newly created during that picker session, use **Save original copy** before leaving if the phone has not saved it elsewhere.
+## Important claim boundary
 
-## Run locally
+A valid ProofStamp can support a claim that a specific committed digital state existed no later than its verified Bitcoin anchoring block.
 
-Playwright is used for development and browser tests.
+It does not by itself prove:
+
+- truth of the contents;
+- authorship;
+- location;
+- original creation time;
+- whether editing occurred before stamping.
+
+Bitcoin block time must not be presented as an exact trusted file-creation clock.
+
+## Development plan
+
+Implementation is intentionally phased:
+
+1. Repository and architecture preparation.
+2. OpenTimestamps interoperability spike and fixture corpus.
+3. ProofStamp Manifest v1 canonicalization and golden vectors.
+4. Browser create/stamp flow with dual local hashing.
+5. Pending-proof upgrade and Bitcoin verification.
+6. Parser/network hardening, fuzzing, CSP tests, and failure injection.
+7. Remove inherited email-specific code and prepare an experimental release.
+
+See [docs/opentimestamps-v0-plan.md](docs/opentimestamps-v0-plan.md) for exit criteria and release gates.
+
+## Security posture
+
+Treat every imported ProofStamp or `.ots` proof as attacker-controlled binary data.
+
+The planned implementation must use explicit parser limits and must never allow proof-provided URLs to expand the browser's production network allowlist.
+
+Multiple OpenTimestamps calendars are used for availability and resilience. They are not independent timestamp authorities and their responses must not be described as consensus.
+
+Browser verification against public Bitcoin data providers is a convenience path. The strongest independent verification path remains standard OpenTimestamps tooling against independently validated Bitcoin chain data, such as a locally controlled Bitcoin Core node.
+
+See [docs/opentimestamps-threat-model.md](docs/opentimestamps-threat-model.md).
+
+## Run the current baseline locally
+
+The current baseline uses Playwright for development and browser tests.
 
 ```bash
 npm install
@@ -67,38 +104,24 @@ npx serve public
 
 Open the local URL shown by `serve`.
 
-## Deploy
+## Build
 
-For Cloudflare Pages:
+```bash
+npm run build
+```
 
-- Build command: `npm run build`
-- Output directory: `dist`
-- Node version: `22`
+The current build runs the Node tests, builds the locked Rust verifier, checks the local verification path, and generates the static `dist/` output.
 
-`npm run build` runs the Node unit/security/version tests and builds the locked Rust verifier before generating `dist`. That means a Cloudflare preview or production deployment fails if those build checks fail. The project remains a static client. The only Cloudflare Pages Function currently retained is preview robots middleware so non-production preview deployments can be marked `noindex`.
+## Repository transition rule
 
-## Verification model
+Do not add a production OpenTimestamps dependency or relax the current network policy merely to make a demo work.
 
-Each file gets a SHA-256 hash. In the product copy this is also called the **file fingerprint** so the user can understand what value is being preserved.
+The first implementation PR should be an interoperability spike with test fixtures. The product flow comes after standard `.ots` read/write compatibility is demonstrated.
 
-A matching SHA-256 fingerprint shows that two sequences of bytes are identical with extremely high confidence. It does not independently establish original creation time, source, authorship, location, pre-ProofStamp editing history, or truth of the file's contents.
+## License and trademarks
 
-Users should retain the exact original files and, when evidence quality matters, the full email including headers.
+Repository source code is licensed under the [MIT License](LICENSE) unless a file or incorporated dependency states otherwise.
 
-See [docs/architecture.md](docs/architecture.md) for the format and verification model.
+The ProofStamp name and branding are not licensed under MIT; see [TRADEMARKS.md](TRADEMARKS.md).
 
-## Brand assets
-
-- `public/email-receipt-logo.svg` is the horizontal product logo.
-- `public/proofstamp-email-mark-vector.svg` combines a minimal envelope with the official PS seal using vector paths.
-- `public/proofstamp-seal.svg` preserves the official ProofStamp logo.
-
-The source code is licensed under the [MIT License](LICENSE). The ProofStamp name and branding are not licensed under MIT; see [TRADEMARKS.md](TRADEMARKS.md). Third-party assets retain their own licenses.
-
-## Automated checks
-
-`npm test` runs the fast Node unit/security/version suite. Cloudflare runs this suite and the locked Rust verifier build automatically as part of every `npm run build` before it deploys a preview or production build.
-
-`npm run check` runs the fast suite, builds the Rust verifier and production site, then runs Playwright browser tests. The existing mobile suite runs in Chromium at 390×844. Dual local verification is additionally exercised in WebKit so the worker, Web Crypto, and locally embedded verifier path are covered outside Chromium.
-
-GitHub Actions runs `npm run check` for pull requests and on `main`. Meaningful browser or mobile changes should not merge while the `tests` workflow is failing.
+Any OpenTimestamps library introduced later must receive an explicit dependency and license review before production use.
